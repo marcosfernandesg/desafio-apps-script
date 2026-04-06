@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <!--
+    Faz links abrirem corretamente dentro do contexto do Apps Script.
+    É padrão em HTML de Web App do Google.
+  -->
+  <base target="_top" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8" />
+  <title>Sistema de Processos</title>
+
+  <!-- Tailwind via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="m-0 min-h-screen bg-[#f3f6fb] font-[Arial,sans-serif] text-[#17212b]">
+
+  <div class="min-h-screen grid grid-cols-1 lg:grid-cols-[240px_1fr] bg-[#f3f6fb]">
+    <!-- Sidebar -->
+    <aside class="min-h-auto lg:min-h-screen bg-gradient-to-b from-[#1f2f40] to-[#162332] text-white px-[18px] pt-6 pb-4 border-r border-white/10">
+      <div class="text-2xl font-bold leading-[1.2] mt-1 mb-7">
+        Sistema de<br>Processos
+      </div>
+
+      <div class="text-[12px] uppercase tracking-[0.08em] text-white/70 mb-[10px]">
+        Ações
+      </div>
+
+      <div class="flex flex-col gap-[10px]">
+        <button
+          class="w-full text-left text-[14px] font-semibold px-[14px] py-3 rounded-[10px] border border-white/10 bg-white/10 hover:bg-white/15 transition duration-150 ease-in-out disabled:opacity-60 disabled:cursor-not-allowed"
+          id="btnNovo"
+          onclick="abrirModal()"
+        >
+          + Novo processo
+        </button>
+
+        <button
+          class="w-full text-left text-[14px] font-semibold px-[14px] py-3 rounded-[10px] border border-white/10 bg-white/10 hover:bg-white/15 transition duration-150 ease-in-out disabled:opacity-60 disabled:cursor-not-allowed"
+          id="btnAtualizar"
+          onclick="carregar()"
+        >
+          Atualizar lista
+        </button>
+      </div>
+    </aside>
+
+    <!-- Área principal -->
+    <main class="min-w-0 bg-[#f3f6fb]">
+      <div class="pt-[22px] pb-[10px] px-4 lg:px-7 bg-[#f3f6fb]">
+        <h1 class="m-0 text-[28px] font-bold text-[#24384d]">
+          Acompanhamento de Processos
+        </h1>
+        <p class="mt-[6px] mb-0 text-[14px] text-[#64748b]">
+          Consulte, filtre, crie, edite e exclua processos.
+        </p>
+      </div>
+
+      <div class="px-4 pb-7 lg:px-7 flex flex-col gap-[18px]">
+
+        <!--
+          Área de mensagens para o usuário.
+          Exibe sucesso, erro ou carregamento.
+        -->
+        <div
+          id="feedback"
+          class="hidden px-[14px] py-3 rounded-[10px] text-[14px] font-semibold border border-[#dbe3ec]"
+        ></div>
+
+        <!-- Filtros -->
+        <section class="bg-white border border-[#dbe3ec] rounded-[14px] shadow-[0_10px_30px_rgba(15,23,42,0.08)]">
+          <div class="p-[18px]">
+            <div class="grid grid-cols-1 xl:grid-cols-[1.5fr_260px_140px] gap-3 items-center">
+              <input
+                class="w-full h-11 rounded-[10px] border border-[#dbe3ec] bg-white px-[14px] text-[14px] outline-none focus:border-[#93c5fd] focus:ring-4 focus:ring-[rgba(147,197,253,0.25)]"
+                type="text"
+                id="busca"
+                placeholder="Buscar por cliente, produto, unidade ou código"
+                oninput="aplicarFiltros()"
+              >
+
+              <select
+                class="w-full h-11 rounded-[10px] border border-[#dbe3ec] bg-white px-[14px] text-[14px] outline-none focus:border-[#93c5fd] focus:ring-4 focus:ring-[rgba(147,197,253,0.25)]"
+                id="filtroStatus"
+                onchange="aplicarFiltros()"
+              >
+                <option value="">Todos os andamentos</option>
+                <option value="INICIADO">INICIADO</option>
+                <option value="ANALISANDO">ANALISANDO</option>
+                <option value="PENDENTE">PENDENTE</option>
+                <option value="PARALISADO">PARALISADO</option>
+                <option value="FINALIZADO">FINALIZADO</option>
+              </select>
+
+              <button
+                class="h-11 rounded-[10px] px-[14px] text-[14px] font-bold border border-[#dbe3ec] bg-[#eef3f8] text-[#24384d] hover:bg-[#e5edf5] transition duration-150 ease-in-out disabled:opacity-65 disabled:cursor-not-allowed"
+                onclick="limparFiltros()"
+              >
+                Limpar filtros
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Tabela -->
+        <section class="bg-white border border-[#dbe3ec] rounded-[14px] shadow-[0_10px_30px_rgba(15,23,42,0.08)]">
+          <div class="overflow-x-auto rounded-[14px]" id="tabela"></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modal de criação/edição -->
+  <div
+    class="hidden fixed inset-0 z-[999] items-center justify-center p-6 bg-[rgba(15,23,42,0.48)]"
+    id="modal"
+  >
+    <div class="w-full max-w-[560px] max-h-[92vh] overflow-y-auto bg-white rounded-[18px] border border-[#dbe3ec] shadow-[0_30px_60px_rgba(15,23,42,0.25)]">
+      <div class="px-5 pt-[18px] pb-3 border-b border-[#dbe3ec]">
+        <h2 class="m-0 text-[22px] text-[#24384d]" id="tituloModal">Novo Processo</h2>
+        <p class="mt-[6px] mb-0 text-[13px] text-[#64748b]">
+          Preencha os dados do processo para salvar.
+        </p>
+      </div>
+
+      <div class="px-5 pt-[18px] pb-5">
+        <!-- ID oculto: vazio = criação | preenchido = edição -->
+        <input type="hidden" id="processoId">
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-[14px]">
+          <div class="flex flex-col gap-[6px] md:col-span-2">
+            <label class="text-[13px] font-bold text-[#24384d]" for="clienteId">Cliente</label>
+            <select class="w-full h-11 rounded-[10px] border border-[#dbe3ec] bg-white px-[14px] text-[14px] outline-none focus:border-[#93c5fd] focus:ring-4 focus:ring-[rgba(147,197,253,0.25)]" id="clienteId"></select>
+          </div>
+
+          <div class="flex flex-col gap-[6px] md:col-span-2">
+            <label class="text-[13px] font-bold text-[#24384d]" for="produtoId">Produto</label>
+            <select class="w-full h-11 rounded-[10px] border border-[#dbe3ec] bg-white px-[14px] text-[14px] outline-none focus:border-[#93c5fd] focus:ring-4 focus:ring-[rgba(147,197,253,0.25)]" id="produtoId"></select>
+          </div>
+
+          <div class="flex flex-col gap-[6px]">
+            <label class="text-[13px] font-bold text-[#24384d]" for="unidadeId">Unidade</label>
+            <select class="w-full h-11 rounded-[10px] border border-[#dbe3ec] bg-white px-[14px] text-[14px] outline-none focus:border-[#93c5fd] focus:ring-4 focus:ring-[rgba(147,197,253,0.25)]" id="unidadeId"></select>
+          </div>
+
+          <div class="flex flex-col gap-[6px]">
+            <label class="text-[13px] font-bold text-[#24384d]" for="codigoContrato">Código do contrato</label>
+            <input class="w-full h-11 rounded-[10px] border border-[#dbe3ec] bg-white px-[14px] text-[14px] outline-none focus:border-[#93c5fd] focus:ring-4 focus:ring-[rgba(147,197,253,0.25)]" id="codigoContrato" placeholder="Ex.: 0015001209">
+          </div>
+
+          <div class="flex flex-col gap-[6px]">
+            <label class="text-[13px] font-bold text-[#24384d]" for="valorContrato">Valor do contrato</label>
+            <input class="w-full h-11 rounded-[10px] border border-[#dbe3ec] bg-white px-[14px] text-[14px] outline-none focus:border-[#93c5fd] focus:ring-4 focus:ring-[rgba(147,197,253,0.25)]" id="valorContrato" placeholder="Ex.: R$ 150.000,00">
+          </div>
+
+          <div class="flex flex-col gap-[6px]">
+            <label class="text-[13px] font-bold text-[#24384d]" for="tipoGarantia">Tipo de garantia</label>
+            <select class="w-full h-11 rounded-[10px] border border-[#dbe3ec] bg-white px-[14px] text-[14px] outline-none focus:border-[#93c5fd] focus:ring-4 focus:ring-[rgba(147,197,253,0.25)]" id="tipoGarantia">
+              <option>NENHUMA</option>
+              <option>CARRO</option>
+              <option>MOTO</option>
+              <option>IMÓVEL</option>
+              <option>EQUIPAMENTO</option>
+            </select>
+          </div>
+
+          <div class="flex flex-col gap-[6px]">
+            <label class="text-[13px] font-bold text-[#24384d]" for="andamento">Andamento</label>
+            <select class="w-full h-11 rounded-[10px] border border-[#dbe3ec] bg-white px-[14px] text-[14px] outline-none focus:border-[#93c5fd] focus:ring-4 focus:ring-[rgba(147,197,253,0.25)]" id="andamento">
+              <option>INICIADO</option>
+              <option>ANALISANDO</option>
+              <option>PENDENTE</option>
+              <option>PARALISADO</option>
+              <option>FINALIZADO</option>
+            </select>
+          </div>
+
+          <div class="flex flex-col gap-[6px]">
+            <label class="text-[13px] font-bold text-[#24384d]" for="dataCriacao">Data da criação</label>
+            <input class="w-full h-11 rounded-[10px] border border-[#dbe3ec] bg-white px-[14px] text-[14px] outline-none focus:border-[#93c5fd] focus:ring-4 focus:ring-[rgba(147,197,253,0.25)]" id="dataCriacao" placeholder="Ex.: 01/04/2026, 12:00:00">
+          </div>
+
+          <div class="flex flex-col gap-[6px]">
+            <label class="text-[13px] font-bold text-[#24384d]" for="dataAtualizacao">Data da atualização</label>
+            <input class="w-full h-11 rounded-[10px] border border-[#dbe3ec] bg-white px-[14px] text-[14px] outline-none focus:border-[#93c5fd] focus:ring-4 focus:ring-[rgba(147,197,253,0.25)]" id="dataAtualizacao" placeholder="Ex.: 01/04/2026, 12:30:00">
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-[10px] mt-4 pt-[14px] border-t border-[#dbe3ec]">
+          <button
+            class="h-11 rounded-[10px] px-[14px] text-[14px] font-bold border border-[#dbe3ec] bg-[#eef3f8] text-[#24384d] hover:bg-[#e5edf5] transition duration-150 ease-in-out"
+            type="button"
+            onclick="fecharModal()"
+          >
+            Cancelar
+          </button>
+
+          <button
+            class="h-11 rounded-[10px] px-[14px] text-[14px] font-bold border-0 bg-[#24384d] text-white hover:bg-[#314b66] transition duration-150 ease-in-out disabled:opacity-65 disabled:cursor-not-allowed"
+            id="btnSalvarModal"
+            type="button"
+            onclick="salvar()"
+          >
+            Salvar processo
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /**
+     * cache:
+     * guarda os processos carregados do back-end.
+     * Assim os filtros funcionam no front sem nova chamada ao servidor.
+     */
+    let cache = [];
+
+    /**
+     * isSaving:
+     * controla quando o modal está salvando edição/criação.
+     *
+     * isLoading:
+     * controla quando a lista principal está sendo carregada.
+     *
+     * Separei os dois porque antes um único "isBusy"
+     * bloqueava botões demais e causava aquela sensação ruim no hover.
+     */
+    let isSaving = false;
+    let isLoading = false;
+
+    /**
+     * Controla o estado de salvamento do modal.
+     * Desabilita:
+     * - botão salvar
+     * - botão novo processo
+     *
+     * A ideia é impedir ações conflitantes enquanto envia dados.
+     */
+    function setSaving(value) {
+      isSaving = value;
+      document.getElementById("btnSalvarModal").disabled = value;
+      document.getElementById("btnNovo").disabled = value;
+    }
+
+    /**
+     * Controla apenas o carregamento da lista principal.
+     * Aqui só o botão "Atualizar lista" é travado.
+     *
+     * Isso evita mostrar o cursor de bloqueio nos botões da tabela.
+     */
+    function setLoading(value) {
+      isLoading = value;
+      document.getElementById("btnAtualizar").disabled = value;
+    }
+
+    /**
+     * Exibe mensagens visuais para o usuário.
+     * Tipos:
+     * - info
+     * - success
+     * - error
+     */
+    function showFeedback(type, text) {
+      const el = document.getElementById("feedback");
+
+      let classes =
+        "block px-[14px] py-3 rounded-[10px] text-[14px] font-semibold border ";
+
+      if (type === "info") {
+        classes += "bg-[#eff6ff] text-[#1d4ed8] border-[#bfdbfe]";
+      } else if (type === "success") {
+        classes += "bg-[#f0fdf4] text-[#15803d] border-[#bbf7d0]";
+      } else {
+        classes += "bg-[#fef2f2] text-[#b91c1c] border-[#fecaca]";
+      }
+
+      el.className = classes;
+      el.textContent = text;
+    }
+
+    /**
+     * Esconde o feedback.
+     */
+    function hideFeedback() {
+      const el = document.getElementById("feedback");
+      el.className = "hidden px-[14px] py-3 rounded-[10px] text-[14px] font-semibold border border-[#dbe3ec]";
+      el.textContent = "";
+    }
+
+    /**
+     * Abre modal no modo "novo processo".
+     * Limpa os campos antes de abrir.
+     */
+    function abrirModal() {
+      limpar();
+      document.getElementById("tituloModal").textContent = "Novo Processo";
+      const modal = document.getElementById("modal");
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+    }
+
+    /**
+     * Fecha modal.
+     * Se estiver salvando, não fecha para evitar inconsistência visual.
+     */
+    function fecharModal() {
+      if (isSaving) return;
+
+      const modal = document.getElementById("modal");
+      modal.classList.remove("flex");
+      modal.classList.add("hidden");
+      limpar();
+    }
+
+    /**
+     * Carrega os processos do back-end.
+     *
+     * Fluxo:
+     * 1. trava só o botão de atualizar
+     * 2. mostra feedback
+     * 3. mostra loading dentro da tabela
+     * 4. busca no Apps Script
+     * 5. salva em cache
+     * 6. renderiza com filtros atuais
+     */
+    function carregar() {
+      if (isLoading) return;
+
+      setLoading(true);
+      showFeedback("info", "Carregando processos...");
+
+      const tabela = document.getElementById("tabela");
+      tabela.innerHTML = '<div class="px-6 py-6 text-[#64748b] text-center text-[14px]">Carregando processos...</div>';
+
+      const btnAtualizar = document.getElementById("btnAtualizar");
+      const textoOriginal = btnAtualizar.textContent;
+      btnAtualizar.textContent = "Atualizando...";
+
+      google.script.run
+        .withSuccessHandler(d => {
+          cache = d || [];
+          aplicarFiltros();
+          showFeedback("success", "Lista atualizada.");
+          setTimeout(hideFeedback, 1800);
+          btnAtualizar.textContent = textoOriginal;
+          setLoading(false);
+        })
+        .withFailureHandler(erro => {
+          showFeedback("error", "Erro ao carregar processos: " + erro.message);
+          btnAtualizar.textContent = textoOriginal;
+          setLoading(false);
+        })
+        .buscarProcessos();
+    }
+
+    /**
+     * Limpa os campos de filtro e reaplica a renderização.
+     */
+    function limparFiltros() {
+      document.getElementById("busca").value = "";
+      document.getElementById("filtroStatus").value = "";
+      aplicarFiltros();
+    }
+
+    /**
+     * Filtra os dados do cache no front-end.
+     *
+     * Vantagem:
+     * - não faz nova chamada ao servidor a cada tecla digitada
+     */
+    function aplicarFiltros() {
+      const texto = document.getElementById("busca").value.toLowerCase().trim();
+      const status = document.getElementById("filtroStatus").value;
+
+      const filtrada = cache.filter(p => {
+        const bateTexto =
+          String(p.clienteNome || "").toLowerCase().includes(texto) ||
+          String(p.produtoNome || "").toLowerCase().includes(texto) ||
+          String(p.unidadeNome || "").toLowerCase().includes(texto) ||
+          String(p.codigoContrato || "").toLowerCase().includes(texto);
+
+        const bateStatus = !status || p.andamento === status;
+        return bateTexto && bateStatus;
+      });
+
+      render(filtrada);
+    }
+
+    /**
+     * Retorna a classe de cor do badge de status.
+     * Isso centraliza a regra visual do andamento.
+     */
+    function getStatusClass(status) {
+      switch (status) {
+        case "INICIADO":
+          return "bg-[#3498db]";
+        case "FINALIZADO":
+          return "bg-[#22c55e]";
+        case "PENDENTE":
+          return "bg-[#ef4444]";
+        case "ANALISANDO":
+          return "bg-[#f59e0b]";
+        case "PARALISADO":
+          return "bg-[#6b7280]";
+        default:
+          return "bg-[#6b7280]";
+      }
+    }
+
+    /**
+     * Renderiza a tabela HTML com base na lista recebida.
+     *
+     * Importante:
+     * - os botões de editar/excluir NÃO ficam desabilitados por isLoading
+     * - isso resolve aquele problema visual do cursor de bloqueio
+     */
+    function render(lista) {
+      const tabela = document.getElementById("tabela");
+
+      if (!lista.length) {
+        tabela.innerHTML = '<div class="px-6 py-6 text-[#64748b] text-center text-[14px]">Nenhum processo encontrado.</div>';
+        return;
+      }
+
+      let html = `
+        <table class="w-full min-w-[1080px] border-separate border-spacing-0 bg-white">
+          <thead>
+            <tr>
+              <th class="sticky top-0 bg-[#24384d] text-white text-[14px] font-bold text-left px-[14px] py-[14px] border-b border-[#1b2a39] whitespace-nowrap rounded-tl-[12px]">Cliente</th>
+              <th class="sticky top-0 bg-[#24384d] text-white text-[14px] font-bold text-left px-[14px] py-[14px] border-b border-[#1b2a39] whitespace-nowrap">Produto</th>
+              <th class="sticky top-0 bg-[#24384d] text-white text-[14px] font-bold text-left px-[14px] py-[14px] border-b border-[#1b2a39] whitespace-nowrap">Unidade</th>
+              <th class="sticky top-0 bg-[#24384d] text-white text-[14px] font-bold text-left px-[14px] py-[14px] border-b border-[#1b2a39] whitespace-nowrap">Código</th>
+              <th class="sticky top-0 bg-[#24384d] text-white text-[14px] font-bold text-left px-[14px] py-[14px] border-b border-[#1b2a39] whitespace-nowrap">Valor</th>
+              <th class="sticky top-0 bg-[#24384d] text-white text-[14px] font-bold text-left px-[14px] py-[14px] border-b border-[#1b2a39] whitespace-nowrap">Garantia</th>
+              <th class="sticky top-0 bg-[#24384d] text-white text-[14px] font-bold text-left px-[14px] py-[14px] border-b border-[#1b2a39] whitespace-nowrap">Status</th>
+              <th class="sticky top-0 bg-[#24384d] text-white text-[14px] font-bold text-left px-[14px] py-[14px] border-b border-[#1b2a39] whitespace-nowrap rounded-tr-[12px]">Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      lista.forEach(p => {
+        html += `
+          <tr class="group">
+            <td class="px-[14px] py-[14px] border-b border-[#edf2f7] align-top text-[14px] bg-white group-hover:bg-[#f8fbff] font-bold text-[#24384d]">${p.clienteNome}</td>
+            <td class="px-[14px] py-[14px] border-b border-[#edf2f7] align-top text-[14px] bg-white group-hover:bg-[#f8fbff]">${p.produtoNome}</td>
+            <td class="px-[14px] py-[14px] border-b border-[#edf2f7] align-top text-[14px] bg-white group-hover:bg-[#f8fbff]">${p.unidadeNome}</td>
+            <td class="px-[14px] py-[14px] border-b border-[#edf2f7] align-top text-[14px] bg-white group-hover:bg-[#f8fbff]">${p.codigoContrato}</td>
+            <td class="px-[14px] py-[14px] border-b border-[#edf2f7] align-top text-[14px] bg-white group-hover:bg-[#f8fbff]">${p.valorContrato}</td>
+            <td class="px-[14px] py-[14px] border-b border-[#edf2f7] align-top text-[14px] bg-white group-hover:bg-[#f8fbff]">${p.tipoGarantia}</td>
+            <td class="px-[14px] py-[14px] border-b border-[#edf2f7] align-top text-[14px] bg-white group-hover:bg-[#f8fbff]">
+              <span class="inline-flex items-center justify-center min-w-[108px] px-[10px] py-[7px] rounded-full text-white text-[12px] font-bold tracking-[0.02em] ${getStatusClass(p.andamento)}">
+                ${p.andamento}
+              </span>
+            </td>
+            <td class="px-[14px] py-[14px] border-b border-[#edf2f7] align-top text-[14px] bg-white group-hover:bg-[#f8fbff]">
+              <div class="flex flex-wrap gap-2">
+                <button
+                  class="h-[34px] px-3 rounded-[8px] text-[13px] font-bold border-0 cursor-pointer bg-[#334155] text-white hover:bg-[#1f2937]"
+                  onclick="editar('${p.id}')"
+                >
+                  Editar
+                </button>
+                <button
+                  class="h-[34px] px-3 rounded-[8px] text-[13px] font-bold border-0 cursor-pointer bg-[#dc2626] text-white hover:bg-[#b91c1c]"
+                  onclick="excluirProcessoUI('${p.id}', this)"
+                >
+                  Excluir
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+
+      html += `</tbody></table>`;
+      tabela.innerHTML = html;
+    }
+
+    /**
+     * Salva o formulário.
+     *
+     * Regra:
+     * - se tiver ID => edita
+     * - se não tiver ID => cria
+     */
+    function salvar() {
+      if (isSaving) return;
+
+      const d = {
+        id: document.getElementById("processoId").value,
+        clienteId: document.getElementById("clienteId").value,
+        produtoId: document.getElementById("produtoId").value,
+        unidadeId: document.getElementById("unidadeId").value,
+        codigoContrato: document.getElementById("codigoContrato").value,
+        valorContrato: document.getElementById("valorContrato").value,
+        tipoGarantia: document.getElementById("tipoGarantia").value,
+        andamento: document.getElementById("andamento").value,
+        dataCriacao: document.getElementById("dataCriacao").value,
+        dataAtualizacao: document.getElementById("dataAtualizacao").value
+      };
+
+      const fn = d.id ? "editarProcesso" : "criarProcesso";
+      const btnSalvar = document.getElementById("btnSalvarModal");
+      const textoOriginal = btnSalvar.textContent;
+
+      setSaving(true);
+      btnSalvar.textContent = d.id ? "Salvando edição..." : "Salvando...";
+      showFeedback("info", d.id ? "Atualizando processo..." : "Criando processo...");
+
+      google.script.run
+        .withSuccessHandler(() => {
+          btnSalvar.textContent = textoOriginal;
+          setSaving(false);
+          fecharModal();
+          showFeedback("success", d.id ? "Processo atualizado com sucesso." : "Processo criado com sucesso.");
+          carregar();
+        })
+        .withFailureHandler(erro => {
+          showFeedback("error", "Erro ao salvar: " + erro.message);
+          btnSalvar.textContent = textoOriginal;
+          setSaving(false);
+        })[fn](d);
+    }
+
+    /**
+     * Abre o modal no modo edição.
+     * Busca o item já carregado no cache.
+     */
+    function editar(id) {
+      const p = cache.find(x => x.id === id);
+      if (!p) return;
+
+      document.getElementById("tituloModal").textContent = "Editar Processo";
+
+      const modal = document.getElementById("modal");
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+
+      document.getElementById("processoId").value = p.id;
+      document.getElementById("clienteId").value = p.clienteId;
+      document.getElementById("produtoId").value = p.produtoId;
+      document.getElementById("unidadeId").value = p.unidadeId;
+      document.getElementById("codigoContrato").value = p.codigoContrato;
+      document.getElementById("valorContrato").value = p.valorContrato;
+      document.getElementById("tipoGarantia").value = p.tipoGarantia;
+      document.getElementById("andamento").value = p.andamento;
+      document.getElementById("dataCriacao").value = p.dataCriacao;
+      document.getElementById("dataAtualizacao").value = p.dataAtualizacao;
+    }
+
+    /**
+     * Exclui um processo com confirmação do usuário.
+     *
+     * Aqui o botão clicado recebe feedback visual próprio,
+     * sem travar o resto da tabela.
+     */
+    function excluirProcessoUI(id, botao) {
+      if (!confirm("Deseja excluir este processo?")) return;
+
+      showFeedback("info", "Excluindo processo...");
+
+      const textoOriginal = botao.textContent;
+      botao.textContent = "Excluindo...";
+      botao.disabled = true;
+
+      google.script.run
+        .withSuccessHandler(() => {
+          showFeedback("success", "Processo excluído com sucesso.");
+          carregar();
+        })
+        .withFailureHandler(erro => {
+          showFeedback("error", "Erro ao excluir: " + erro.message);
+          botao.textContent = textoOriginal;
+          botao.disabled = false;
+        })
+        .excluirProcesso(id);
+    }
+
+    /**
+     * Limpa os campos do modal.
+     * Isso garante que ao abrir "novo processo"
+     * não fiquem resíduos de edição anterior.
+     */
+    function limpar() {
+      document.getElementById("processoId").value = "";
+      document.getElementById("clienteId").value = "";
+      document.getElementById("produtoId").value = "";
+      document.getElementById("unidadeId").value = "";
+      document.getElementById("codigoContrato").value = "";
+      document.getElementById("valorContrato").value = "";
+      document.getElementById("tipoGarantia").value = "NENHUMA";
+      document.getElementById("andamento").value = "INICIADO";
+      document.getElementById("dataCriacao").value = "";
+      document.getElementById("dataAtualizacao").value = "";
+    }
+
+    /**
+     * Carrega os dados dos selects do formulário.
+     * Essa chamada é separada da lista de processos.
+     */
+    function carregarSelects() {
+      google.script.run
+        .withSuccessHandler(op => {
+          fill("clienteId", op.clientes);
+          fill("produtoId", op.produtos);
+          fill("unidadeId", op.unidades);
+        })
+        .withFailureHandler(erro => {
+          showFeedback("error", "Erro ao carregar opções: " + erro.message);
+        })
+        .buscarOpcoesFormulario();
+    }
+
+    /**
+     * Preenche um select com base na lista recebida.
+     *
+     * Exemplo de entrada:
+     * [{ id: "1", nome: "Cliente A" }]
+     */
+    function fill(id, lista) {
+      const s = document.getElementById(id);
+      s.innerHTML = "<option value=''>Selecione</option>";
+
+      lista.forEach(i => {
+        s.innerHTML += `<option value="${i.id}">${i.nome}</option>`;
+      });
+    }
+
+    /**
+     * Ao carregar a página:
+     * - carrega a lista principal
+     * - carrega os selects do formulário
+     */
+    window.onload = () => {
+      carregar();
+      carregarSelects();
+    };
+  </script>
+</body>
+</html>
